@@ -1,0 +1,2832 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 0,
+  "metadata": {
+    "colab": {
+      "provenance": [],
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "name": "python3",
+      "display_name": "Python 3"
+    },
+    "language_info": {
+      "name": "python"
+    }
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/luischga465-beep/Portafolio-de-proyectos/blob/main/Modelo%20Random%20Forest%20F%C3%BAtbol\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "#Obtención de datos"
+      ],
+      "metadata": {
+        "id": "QtKe6EI0GzVQ"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Construcción de la variable \"Diferencia de Goles\""
+      ],
+      "metadata": {
+        "id": "KfPRN-27G9dc"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import openpyxl\n",
+        "\n",
+        "archivo_excel = r\"Liga MX.xlsx\"\n",
+        "wb = openpyxl.load_workbook(archivo_excel)\n",
+        "\n",
+        "for hoja in wb.worksheets:\n",
+        "    hoja.cell(row=1, column=20, value='DG')\n",
+        "\n",
+        "    for fila in range(2, hoja.max_row + 1):\n",
+        "        valor_H = hoja.cell(row=fila, column=8).value\n",
+        "        valor_I = hoja.cell(row=fila, column=9).value\n",
+        "        if valor_H is None or not isinstance(valor_H, (int, float)):\n",
+        "            valor_H = 0\n",
+        "        if valor_I is None or not isinstance(valor_I, (int, float)):\n",
+        "            valor_I = 0\n",
+        "\n",
+        "        diferencia = valor_H - valor_I\n",
+        "        hoja.cell(row=fila, column=20, value=diferencia)\n",
+        "\n",
+        "wb.save(archivo_excel)"
+      ],
+      "metadata": {
+        "id": "ZODdyX-mHND2"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Limpieza de datos inncecesarios"
+      ],
+      "metadata": {
+        "id": "PBFGPNzqHmvi"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "wb = openpyxl.load_workbook(archivo_excel)\n",
+        "\n",
+        "columnas_a_mantener = [1, 10, 20]\n",
+        "\n",
+        "for hoja in wb.worksheets:\n",
+        "    nueva_hoja = wb.create_sheet(title=f\"temp_{hoja.title}\")\n",
+        "\n",
+        "    for col_index, col_num in enumerate(columnas_a_mantener, start=1):\n",
+        "        nueva_hoja.cell(row=1, column=col_index, value=hoja.cell(row=1, column=col_num).value)\n",
+        "\n",
+        "    for row_index in range(2, hoja.max_row + 1):\n",
+        "        if row_index == 22:\n",
+        "            continue\n",
+        "        for col_index, col_num in enumerate(columnas_a_mantener, start=1):\n",
+        "            nueva_hoja.cell(row=row_index if row_index < 22 else row_index - 1, column=col_index, value=hoja.cell(row=row_index, column=col_num).value)\n",
+        "\n",
+        "    wb.remove(hoja)\n",
+        "    nueva_hoja.title = hoja.title\n",
+        "\n",
+        "wb.save(archivo_excel)\n"
+      ],
+      "metadata": {
+        "id": "6r-9zSk2IQd1"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Obtención del índice de Dificultad del Rival con los promedios de diferencia de goles de los últimos tres partidos"
+      ],
+      "metadata": {
+        "id": "c1Mog4_NIl6o"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "for hoja in wb.worksheets:\n",
+        "    hoja.cell(row=1, column=4, value=\"Rendimiento promedio\")\n",
+        "\n",
+        "    hoja.cell(row=2, column=4, value=0)\n",
+        "\n",
+        "    hoja.cell(row=3, column=4, value=hoja.cell(row=2, column=3).value)\n",
+        "    hoja.cell(row=4, column=4, value=(hoja.cell(row=3, column=3).value + hoja.cell(row=2, column=3).value) / 2)\n",
+        "\n",
+        "    for fila in range(5, hoja.max_row + 1):\n",
+        "        promedio = (hoja.cell(row=fila - 1, column=3).value + hoja.cell(row=fila - 2, column=3).value + hoja.cell(row=fila - 3, column=3).value) / 3\n",
+        "        hoja.cell(row=fila, column=4, value=promedio)\n",
+        "\n",
+        "wb.save(archivo_excel)"
+      ],
+      "metadata": {
+        "id": "6TaMxZQFIxvu"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Proceso de ubicación del valor del índice para cada respectivo rival"
+      ],
+      "metadata": {
+        "id": "A1UOSy37JGwS"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "for hoja_principal in wb.worksheets:\n",
+        "    hoja_principal.cell(row=1, column=4, value=\"Rendimiento Promedio Propio\")\n",
+        "    hoja_principal.cell(row=1, column=5, value=\"Rendimiento Promedio del Rival\")\n",
+        "\n",
+        "    for fila in range(2, hoja_principal.max_row + 1):\n",
+        "        nombre_hoja = hoja_principal.cell(row=fila, column=2).value\n",
+        "        dato_A = hoja_principal.cell(row=fila, column=1).value\n",
+        "\n",
+        "        if nombre_hoja in wb.sheetnames:\n",
+        "            hoja_localizada = wb[nombre_hoja]\n",
+        "\n",
+        "            for fila_localizada in range(1, hoja_localizada.max_row + 1):\n",
+        "                if hoja_localizada.cell(row=fila_localizada, column=1).value == dato_A:\n",
+        "                    dato_E = hoja_localizada.cell(row=fila_localizada, column=4).value\n",
+        "                    hoja_principal.cell(row=fila, column=5).value = dato_E\n",
+        "                    break\n",
+        "\n",
+        "wb.save(archivo_excel)"
+      ],
+      "metadata": {
+        "id": "jpWI0dCfJiC8"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Proceso de One Hot Encoding para agregar las variables categóricas de los equipos"
+      ],
+      "metadata": {
+        "id": "juLGFGqdJuvU"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "nuevos_encabezados = [\"América\", \"Cruz Azul\", \"Guadalajara\", \"Monterrey\", \"Pachuca\", \"Toluca\", \"UANL\", \"UNAM\"]\n",
+        "\n",
+        "sheets_dict = {}\n",
+        "\n",
+        "for sheet_name in xlsx.sheet_names:\n",
+        "    df = pd.read_excel(xlsx, sheet_name=sheet_name)\n",
+        "    columnas_existentes = len(df.columns)\n",
+        "    columnas_necesarias = 4 + len(nuevos_encabezados)\n",
+        "\n",
+        "    if columnas_existentes < columnas_necesarias:\n",
+        "        for i in range(columnas_existentes, columnas_necesarias):\n",
+        "            df[f'Column{i+1}'] = None\n",
+        "\n",
+        "    df.columns.values[4:4+len(nuevos_encabezados)] = nuevos_encabezados\n",
+        "\n",
+        "    for header in nuevos_encabezados:\n",
+        "        df[header] = 0\n",
+        "\n",
+        "    if 'Adversario' in df.columns:\n",
+        "        for i, valor in df['Adversario'].iteritems():\n",
+        "            if valor in nuevos_encabezados:\n",
+        "                col_idx = nuevos_encabezados.index(valor) + 4\n",
+        "                df.iat[i, col_idx] = 1\n",
+        "\n",
+        "    df.iloc[:, 4:4+len(nuevos_encabezados)] = df.iloc[:, 4:4+len(nuevos_encabezados)].fillna(0)\n",
+        "\n",
+        "    sheets_dict[sheet_name] = df\n",
+        "\n",
+        "with pd.ExcelWriter(archivo, engine='openpyxl') as writer:\n",
+        "    for sheet_name, df in sheets_dict.items():\n",
+        "        df.to_excel(writer, sheet_name=sheet_name, index=False)"
+      ],
+      "metadata": {
+        "id": "rRXmcq-mKd8Y"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Conjuntar la información de los ocho equipos de interés"
+      ],
+      "metadata": {
+        "id": "m0dLi7qkKs27"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "excel_file = pd.ExcelFile(file_path)\n",
+        "sheet_names = excel_file.sheet_names\n",
+        "\n",
+        "df_list = []\n",
+        "\n",
+        "for sheet_name in sheet_names:\n",
+        "    df = pd.read_excel(file_path, sheet_name=sheet_name)\n",
+        "\n",
+        "    df['Equipo'] = sheet_name\n",
+        "\n",
+        "    df_list.append(df)\n",
+        "\n",
+        "df_concatenado = pd.concat(df_list, ignore_index=True)\n",
+        "\n",
+        "df_final = pd.get_dummies(df_concatenado, columns=['Equipo'])\n",
+        "\n",
+        "df_final.columns = [col.replace('Equipo_', '') for col in df_final.columns]\n",
+        "\n",
+        "print(df_final.head())\n",
+        "\n",
+        "df_final.to_excel('rendimiento_historico_concatenado.xlsx', index=False)\n"
+      ],
+      "metadata": {
+        "id": "HjjjXujyKyMe"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "\n",
+        "\n",
+        "> Nota: Los archivos sobre los que se corren los scripts presentados ya no se conservan debido a una mala gestión en nuestro almacenamiento, por lo que se presentarán errores al intentarlos correr. Sin embargo, pueden sirven para ilustrar la manera en que se realizó todo el proceso de obtención de datos. Una disculpa de nuestra parte.\n",
+        "\n",
+        "\n",
+        "\n",
+        "\n"
+      ],
+      "metadata": {
+        "id": "fT929D7GMvJB"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "# Construcción del Modelo"
+      ],
+      "metadata": {
+        "id": "dKc5o-i4GVOf"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Importamos Paqueterías"
+      ],
+      "metadata": {
+        "id": "59ZsFfDACnZo"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import pandas as pd\n",
+        "from sklearn.model_selection import train_test_split\n",
+        "from sklearn.ensemble import RandomForestClassifier\n",
+        "from sklearn.metrics import accuracy_score, classification_report"
+      ],
+      "metadata": {
+        "id": "zSZrY9vuCmp4"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Ruta de acceso al nuevo archivo Excel"
+      ],
+      "metadata": {
+        "id": "AtPQ0VD9Cmz6"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "file_path = r\"/content/Datos Finales.xlsx\""
+      ],
+      "metadata": {
+        "id": "3A6pfXQdDTTS"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Leer el archivo Excel"
+      ],
+      "metadata": {
+        "id": "MzTH1VvLDfYp"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "df = pd.read_excel(file_path)\n",
+        "\n",
+        "df.head(10)"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 383
+        },
+        "id": "0vp-EHTcDg-q",
+        "outputId": "04bd1914-5970-4f71-f6a1-798cf7b90a1a"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": [
+              "   Puntos Sumados  Diferencia de Goles  Dificultad del Rival  Localía  \\\n",
+              "0               0                    0              0.000000        0   \n",
+              "1               3                   -1             -0.500000        0   \n",
+              "2               1                    3              0.333333        0   \n",
+              "3               3                    0             -1.666667        0   \n",
+              "4               1                    1             -1.000000        0   \n",
+              "5               3                    0              0.000000        1   \n",
+              "6               3                    1             -0.333333        0   \n",
+              "7               3                    4             -2.000000        1   \n",
+              "8               1                    1              1.666667        1   \n",
+              "9               3                    0              0.666667        0   \n",
+              "\n",
+              "   América  Cruz Azul  Guadalajara  Monterrey  Pachuca  Toluca  UANL  UNAM  \n",
+              "0        1          0            0          0        0       0     0     0  \n",
+              "1        1          0            0          0        0       0     0     0  \n",
+              "2        1          0            0          0        0       0     0     0  \n",
+              "3        1          0            0          0        0       0     0     0  \n",
+              "4        1          0            0          0        0       0     0     0  \n",
+              "5        1          1            0          0        0       0     0     0  \n",
+              "6        1          0            1          0        0       0     0     0  \n",
+              "7        1          0            0          0        0       0     0     0  \n",
+              "8        1          0            0          0        0       1     0     0  \n",
+              "9        1          0            0          0        0       0     0     1  "
+            ],
+            "text/html": [
+              "\n",
+              "  <div id=\"df-686769bc-92d5-43bd-bdb5-47e1b958bb4c\" class=\"colab-df-container\">\n",
+              "    <div>\n",
+              "<style scoped>\n",
+              "    .dataframe tbody tr th:only-of-type {\n",
+              "        vertical-align: middle;\n",
+              "    }\n",
+              "\n",
+              "    .dataframe tbody tr th {\n",
+              "        vertical-align: top;\n",
+              "    }\n",
+              "\n",
+              "    .dataframe thead th {\n",
+              "        text-align: right;\n",
+              "    }\n",
+              "</style>\n",
+              "<table border=\"1\" class=\"dataframe\">\n",
+              "  <thead>\n",
+              "    <tr style=\"text-align: right;\">\n",
+              "      <th></th>\n",
+              "      <th>Puntos Sumados</th>\n",
+              "      <th>Diferencia de Goles</th>\n",
+              "      <th>Dificultad del Rival</th>\n",
+              "      <th>Localía</th>\n",
+              "      <th>América</th>\n",
+              "      <th>Cruz Azul</th>\n",
+              "      <th>Guadalajara</th>\n",
+              "      <th>Monterrey</th>\n",
+              "      <th>Pachuca</th>\n",
+              "      <th>Toluca</th>\n",
+              "      <th>UANL</th>\n",
+              "      <th>UNAM</th>\n",
+              "    </tr>\n",
+              "  </thead>\n",
+              "  <tbody>\n",
+              "    <tr>\n",
+              "      <th>0</th>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0.000000</td>\n",
+              "      <td>0</td>\n",
+              "      <td>1</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>1</th>\n",
+              "      <td>3</td>\n",
+              "      <td>-1</td>\n",
+              "      <td>-0.500000</td>\n",
+              "      <td>0</td>\n",
+              "      <td>1</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>2</th>\n",
+              "      <td>1</td>\n",
+              "      <td>3</td>\n",
+              "      <td>0.333333</td>\n",
+              "      <td>0</td>\n",
+              "      <td>1</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>3</th>\n",
+              "      <td>3</td>\n",
+              "      <td>0</td>\n",
+              "      <td>-1.666667</td>\n",
+              "      <td>0</td>\n",
+              "      <td>1</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>4</th>\n",
+              "      <td>1</td>\n",
+              "      <td>1</td>\n",
+              "      <td>-1.000000</td>\n",
+              "      <td>0</td>\n",
+              "      <td>1</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>5</th>\n",
+              "      <td>3</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0.000000</td>\n",
+              "      <td>1</td>\n",
+              "      <td>1</td>\n",
+              "      <td>1</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>6</th>\n",
+              "      <td>3</td>\n",
+              "      <td>1</td>\n",
+              "      <td>-0.333333</td>\n",
+              "      <td>0</td>\n",
+              "      <td>1</td>\n",
+              "      <td>0</td>\n",
+              "      <td>1</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>7</th>\n",
+              "      <td>3</td>\n",
+              "      <td>4</td>\n",
+              "      <td>-2.000000</td>\n",
+              "      <td>1</td>\n",
+              "      <td>1</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>8</th>\n",
+              "      <td>1</td>\n",
+              "      <td>1</td>\n",
+              "      <td>1.666667</td>\n",
+              "      <td>1</td>\n",
+              "      <td>1</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>1</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>9</th>\n",
+              "      <td>3</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0.666667</td>\n",
+              "      <td>0</td>\n",
+              "      <td>1</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>1</td>\n",
+              "    </tr>\n",
+              "  </tbody>\n",
+              "</table>\n",
+              "</div>\n",
+              "    <div class=\"colab-df-buttons\">\n",
+              "\n",
+              "  <div class=\"colab-df-container\">\n",
+              "    <button class=\"colab-df-convert\" onclick=\"convertToInteractive('df-686769bc-92d5-43bd-bdb5-47e1b958bb4c')\"\n",
+              "            title=\"Convert this dataframe to an interactive table.\"\n",
+              "            style=\"display:none;\">\n",
+              "\n",
+              "  <svg xmlns=\"http://www.w3.org/2000/svg\" height=\"24px\" viewBox=\"0 -960 960 960\">\n",
+              "    <path d=\"M120-120v-720h720v720H120Zm60-500h600v-160H180v160Zm220 220h160v-160H400v160Zm0 220h160v-160H400v160ZM180-400h160v-160H180v160Zm440 0h160v-160H620v160ZM180-180h160v-160H180v160Zm440 0h160v-160H620v160Z\"/>\n",
+              "  </svg>\n",
+              "    </button>\n",
+              "\n",
+              "  <style>\n",
+              "    .colab-df-container {\n",
+              "      display:flex;\n",
+              "      gap: 12px;\n",
+              "    }\n",
+              "\n",
+              "    .colab-df-convert {\n",
+              "      background-color: #E8F0FE;\n",
+              "      border: none;\n",
+              "      border-radius: 50%;\n",
+              "      cursor: pointer;\n",
+              "      display: none;\n",
+              "      fill: #1967D2;\n",
+              "      height: 32px;\n",
+              "      padding: 0 0 0 0;\n",
+              "      width: 32px;\n",
+              "    }\n",
+              "\n",
+              "    .colab-df-convert:hover {\n",
+              "      background-color: #E2EBFA;\n",
+              "      box-shadow: 0px 1px 2px rgba(60, 64, 67, 0.3), 0px 1px 3px 1px rgba(60, 64, 67, 0.15);\n",
+              "      fill: #174EA6;\n",
+              "    }\n",
+              "\n",
+              "    .colab-df-buttons div {\n",
+              "      margin-bottom: 4px;\n",
+              "    }\n",
+              "\n",
+              "    [theme=dark] .colab-df-convert {\n",
+              "      background-color: #3B4455;\n",
+              "      fill: #D2E3FC;\n",
+              "    }\n",
+              "\n",
+              "    [theme=dark] .colab-df-convert:hover {\n",
+              "      background-color: #434B5C;\n",
+              "      box-shadow: 0px 1px 3px 1px rgba(0, 0, 0, 0.15);\n",
+              "      filter: drop-shadow(0px 1px 2px rgba(0, 0, 0, 0.3));\n",
+              "      fill: #FFFFFF;\n",
+              "    }\n",
+              "  </style>\n",
+              "\n",
+              "    <script>\n",
+              "      const buttonEl =\n",
+              "        document.querySelector('#df-686769bc-92d5-43bd-bdb5-47e1b958bb4c button.colab-df-convert');\n",
+              "      buttonEl.style.display =\n",
+              "        google.colab.kernel.accessAllowed ? 'block' : 'none';\n",
+              "\n",
+              "      async function convertToInteractive(key) {\n",
+              "        const element = document.querySelector('#df-686769bc-92d5-43bd-bdb5-47e1b958bb4c');\n",
+              "        const dataTable =\n",
+              "          await google.colab.kernel.invokeFunction('convertToInteractive',\n",
+              "                                                    [key], {});\n",
+              "        if (!dataTable) return;\n",
+              "\n",
+              "        const docLinkHtml = 'Like what you see? Visit the ' +\n",
+              "          '<a target=\"_blank\" href=https://colab.research.google.com/notebooks/data_table.ipynb>data table notebook</a>'\n",
+              "          + ' to learn more about interactive tables.';\n",
+              "        element.innerHTML = '';\n",
+              "        dataTable['output_type'] = 'display_data';\n",
+              "        await google.colab.output.renderOutput(dataTable, element);\n",
+              "        const docLink = document.createElement('div');\n",
+              "        docLink.innerHTML = docLinkHtml;\n",
+              "        element.appendChild(docLink);\n",
+              "      }\n",
+              "    </script>\n",
+              "  </div>\n",
+              "\n",
+              "\n",
+              "<div id=\"df-85ad738b-8736-473f-b2f2-f3fea29c51a7\">\n",
+              "  <button class=\"colab-df-quickchart\" onclick=\"quickchart('df-85ad738b-8736-473f-b2f2-f3fea29c51a7')\"\n",
+              "            title=\"Suggest charts\"\n",
+              "            style=\"display:none;\">\n",
+              "\n",
+              "<svg xmlns=\"http://www.w3.org/2000/svg\" height=\"24px\"viewBox=\"0 0 24 24\"\n",
+              "     width=\"24px\">\n",
+              "    <g>\n",
+              "        <path d=\"M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z\"/>\n",
+              "    </g>\n",
+              "</svg>\n",
+              "  </button>\n",
+              "\n",
+              "<style>\n",
+              "  .colab-df-quickchart {\n",
+              "      --bg-color: #E8F0FE;\n",
+              "      --fill-color: #1967D2;\n",
+              "      --hover-bg-color: #E2EBFA;\n",
+              "      --hover-fill-color: #174EA6;\n",
+              "      --disabled-fill-color: #AAA;\n",
+              "      --disabled-bg-color: #DDD;\n",
+              "  }\n",
+              "\n",
+              "  [theme=dark] .colab-df-quickchart {\n",
+              "      --bg-color: #3B4455;\n",
+              "      --fill-color: #D2E3FC;\n",
+              "      --hover-bg-color: #434B5C;\n",
+              "      --hover-fill-color: #FFFFFF;\n",
+              "      --disabled-bg-color: #3B4455;\n",
+              "      --disabled-fill-color: #666;\n",
+              "  }\n",
+              "\n",
+              "  .colab-df-quickchart {\n",
+              "    background-color: var(--bg-color);\n",
+              "    border: none;\n",
+              "    border-radius: 50%;\n",
+              "    cursor: pointer;\n",
+              "    display: none;\n",
+              "    fill: var(--fill-color);\n",
+              "    height: 32px;\n",
+              "    padding: 0;\n",
+              "    width: 32px;\n",
+              "  }\n",
+              "\n",
+              "  .colab-df-quickchart:hover {\n",
+              "    background-color: var(--hover-bg-color);\n",
+              "    box-shadow: 0 1px 2px rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);\n",
+              "    fill: var(--button-hover-fill-color);\n",
+              "  }\n",
+              "\n",
+              "  .colab-df-quickchart-complete:disabled,\n",
+              "  .colab-df-quickchart-complete:disabled:hover {\n",
+              "    background-color: var(--disabled-bg-color);\n",
+              "    fill: var(--disabled-fill-color);\n",
+              "    box-shadow: none;\n",
+              "  }\n",
+              "\n",
+              "  .colab-df-spinner {\n",
+              "    border: 2px solid var(--fill-color);\n",
+              "    border-color: transparent;\n",
+              "    border-bottom-color: var(--fill-color);\n",
+              "    animation:\n",
+              "      spin 1s steps(1) infinite;\n",
+              "  }\n",
+              "\n",
+              "  @keyframes spin {\n",
+              "    0% {\n",
+              "      border-color: transparent;\n",
+              "      border-bottom-color: var(--fill-color);\n",
+              "      border-left-color: var(--fill-color);\n",
+              "    }\n",
+              "    20% {\n",
+              "      border-color: transparent;\n",
+              "      border-left-color: var(--fill-color);\n",
+              "      border-top-color: var(--fill-color);\n",
+              "    }\n",
+              "    30% {\n",
+              "      border-color: transparent;\n",
+              "      border-left-color: var(--fill-color);\n",
+              "      border-top-color: var(--fill-color);\n",
+              "      border-right-color: var(--fill-color);\n",
+              "    }\n",
+              "    40% {\n",
+              "      border-color: transparent;\n",
+              "      border-right-color: var(--fill-color);\n",
+              "      border-top-color: var(--fill-color);\n",
+              "    }\n",
+              "    60% {\n",
+              "      border-color: transparent;\n",
+              "      border-right-color: var(--fill-color);\n",
+              "    }\n",
+              "    80% {\n",
+              "      border-color: transparent;\n",
+              "      border-right-color: var(--fill-color);\n",
+              "      border-bottom-color: var(--fill-color);\n",
+              "    }\n",
+              "    90% {\n",
+              "      border-color: transparent;\n",
+              "      border-bottom-color: var(--fill-color);\n",
+              "    }\n",
+              "  }\n",
+              "</style>\n",
+              "\n",
+              "  <script>\n",
+              "    async function quickchart(key) {\n",
+              "      const quickchartButtonEl =\n",
+              "        document.querySelector('#' + key + ' button');\n",
+              "      quickchartButtonEl.disabled = true;  // To prevent multiple clicks.\n",
+              "      quickchartButtonEl.classList.add('colab-df-spinner');\n",
+              "      try {\n",
+              "        const charts = await google.colab.kernel.invokeFunction(\n",
+              "            'suggestCharts', [key], {});\n",
+              "      } catch (error) {\n",
+              "        console.error('Error during call to suggestCharts:', error);\n",
+              "      }\n",
+              "      quickchartButtonEl.classList.remove('colab-df-spinner');\n",
+              "      quickchartButtonEl.classList.add('colab-df-quickchart-complete');\n",
+              "    }\n",
+              "    (() => {\n",
+              "      let quickchartButtonEl =\n",
+              "        document.querySelector('#df-85ad738b-8736-473f-b2f2-f3fea29c51a7 button');\n",
+              "      quickchartButtonEl.style.display =\n",
+              "        google.colab.kernel.accessAllowed ? 'block' : 'none';\n",
+              "    })();\n",
+              "  </script>\n",
+              "</div>\n",
+              "\n",
+              "    </div>\n",
+              "  </div>\n"
+            ],
+            "application/vnd.google.colaboratory.intrinsic+json": {
+              "type": "dataframe",
+              "variable_name": "df",
+              "summary": "{\n  \"name\": \"df\",\n  \"rows\": 297,\n  \"fields\": [\n    {\n      \"column\": \"Puntos Sumados\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 1,\n        \"min\": 0,\n        \"max\": 3,\n        \"num_unique_values\": 3,\n        \"samples\": [\n          0,\n          3,\n          1\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Diferencia de Goles\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 1,\n        \"min\": -5,\n        \"max\": 5,\n        \"num_unique_values\": 11,\n        \"samples\": [\n          2,\n          0,\n          -4\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Dificultad del Rival\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 1.0330300652750755,\n        \"min\": -3.0,\n        \"max\": 2.333333333333333,\n        \"num_unique_values\": 19,\n        \"samples\": [\n          0.0,\n          -0.3333333333333333,\n          -0.6666666666666666\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Local\\u00eda\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 0,\n        \"min\": 0,\n        \"max\": 1,\n        \"num_unique_values\": 2,\n        \"samples\": [\n          1,\n          0\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Am\\u00e9rica\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 0,\n        \"min\": 0,\n        \"max\": 1,\n        \"num_unique_values\": 2,\n        \"samples\": [\n          0,\n          1\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Cruz Azul\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 0,\n        \"min\": 0,\n        \"max\": 1,\n        \"num_unique_values\": 2,\n        \"samples\": [\n          1,\n          0\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Guadalajara\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 0,\n        \"min\": 0,\n        \"max\": 1,\n        \"num_unique_values\": 2,\n        \"samples\": [\n          1,\n          0\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Monterrey\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 0,\n        \"min\": 0,\n        \"max\": 1,\n        \"num_unique_values\": 2,\n        \"samples\": [\n          1,\n          0\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Pachuca\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 0,\n        \"min\": 0,\n        \"max\": 1,\n        \"num_unique_values\": 2,\n        \"samples\": [\n          1,\n          0\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Toluca\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 0,\n        \"min\": 0,\n        \"max\": 1,\n        \"num_unique_values\": 2,\n        \"samples\": [\n          1,\n          0\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"UANL\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 0,\n        \"min\": 0,\n        \"max\": 1,\n        \"num_unique_values\": 2,\n        \"samples\": [\n          1,\n          0\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"UNAM\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 0,\n        \"min\": 0,\n        \"max\": 1,\n        \"num_unique_values\": 2,\n        \"samples\": [\n          1,\n          0\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    }\n  ]\n}"
+            }
+          },
+          "metadata": {},
+          "execution_count": 73
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Separar las características (x) y la variable objetivo (y)"
+      ],
+      "metadata": {
+        "id": "afqG4iIvDqUQ"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "X = df.drop(['Puntos Sumados'], axis=1)\n",
+        "y = df['Puntos Sumados']"
+      ],
+      "metadata": {
+        "id": "xQ1oqg7XDylJ"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Dividir los datos en conjuntos de entrenamiento y prueba"
+      ],
+      "metadata": {
+        "id": "NDaS5Gr9D1NK"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)"
+      ],
+      "metadata": {
+        "id": "VSBfDO3CD3UJ"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Construir el modelo de Random Forest para clasificación"
+      ],
+      "metadata": {
+        "id": "AVH9-iXgD6Dh"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "rf_model = RandomForestClassifier(n_estimators=100, random_state=42)"
+      ],
+      "metadata": {
+        "id": "VGe_mwlLD8E8"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Entrenar el modelo"
+      ],
+      "metadata": {
+        "id": "5oiPpvynD_hm"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "rf_model.fit(X_train, y_train)"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 94
+        },
+        "id": "oKCaChajD__Q",
+        "outputId": "4e140c9f-7f31-4a63-c2f9-aacdd44e1b17"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": [
+              "RandomForestClassifier(random_state=42)"
+            ],
+            "text/html": [
+              "<style>#sk-container-id-1 {color: black;background-color: white;}#sk-container-id-1 pre{padding: 0;}#sk-container-id-1 div.sk-toggleable {background-color: white;}#sk-container-id-1 label.sk-toggleable__label {cursor: pointer;display: block;width: 100%;margin-bottom: 0;padding: 0.3em;box-sizing: border-box;text-align: center;}#sk-container-id-1 label.sk-toggleable__label-arrow:before {content: \"▸\";float: left;margin-right: 0.25em;color: #696969;}#sk-container-id-1 label.sk-toggleable__label-arrow:hover:before {color: black;}#sk-container-id-1 div.sk-estimator:hover label.sk-toggleable__label-arrow:before {color: black;}#sk-container-id-1 div.sk-toggleable__content {max-height: 0;max-width: 0;overflow: hidden;text-align: left;background-color: #f0f8ff;}#sk-container-id-1 div.sk-toggleable__content pre {margin: 0.2em;color: black;border-radius: 0.25em;background-color: #f0f8ff;}#sk-container-id-1 input.sk-toggleable__control:checked~div.sk-toggleable__content {max-height: 200px;max-width: 100%;overflow: auto;}#sk-container-id-1 input.sk-toggleable__control:checked~label.sk-toggleable__label-arrow:before {content: \"▾\";}#sk-container-id-1 div.sk-estimator input.sk-toggleable__control:checked~label.sk-toggleable__label {background-color: #d4ebff;}#sk-container-id-1 div.sk-label input.sk-toggleable__control:checked~label.sk-toggleable__label {background-color: #d4ebff;}#sk-container-id-1 input.sk-hidden--visually {border: 0;clip: rect(1px 1px 1px 1px);clip: rect(1px, 1px, 1px, 1px);height: 1px;margin: -1px;overflow: hidden;padding: 0;position: absolute;width: 1px;}#sk-container-id-1 div.sk-estimator {font-family: monospace;background-color: #f0f8ff;border: 1px dotted black;border-radius: 0.25em;box-sizing: border-box;margin-bottom: 0.5em;}#sk-container-id-1 div.sk-estimator:hover {background-color: #d4ebff;}#sk-container-id-1 div.sk-parallel-item::after {content: \"\";width: 100%;border-bottom: 1px solid gray;flex-grow: 1;}#sk-container-id-1 div.sk-label:hover label.sk-toggleable__label {background-color: #d4ebff;}#sk-container-id-1 div.sk-serial::before {content: \"\";position: absolute;border-left: 1px solid gray;box-sizing: border-box;top: 0;bottom: 0;left: 50%;z-index: 0;}#sk-container-id-1 div.sk-serial {display: flex;flex-direction: column;align-items: center;background-color: white;padding-right: 0.2em;padding-left: 0.2em;position: relative;}#sk-container-id-1 div.sk-item {position: relative;z-index: 1;}#sk-container-id-1 div.sk-parallel {display: flex;align-items: stretch;justify-content: center;background-color: white;position: relative;}#sk-container-id-1 div.sk-item::before, #sk-container-id-1 div.sk-parallel-item::before {content: \"\";position: absolute;border-left: 1px solid gray;box-sizing: border-box;top: 0;bottom: 0;left: 50%;z-index: -1;}#sk-container-id-1 div.sk-parallel-item {display: flex;flex-direction: column;z-index: 1;position: relative;background-color: white;}#sk-container-id-1 div.sk-parallel-item:first-child::after {align-self: flex-end;width: 50%;}#sk-container-id-1 div.sk-parallel-item:last-child::after {align-self: flex-start;width: 50%;}#sk-container-id-1 div.sk-parallel-item:only-child::after {width: 0;}#sk-container-id-1 div.sk-dashed-wrapped {border: 1px dashed gray;margin: 0 0.4em 0.5em 0.4em;box-sizing: border-box;padding-bottom: 0.4em;background-color: white;}#sk-container-id-1 div.sk-label label {font-family: monospace;font-weight: bold;display: inline-block;line-height: 1.2em;}#sk-container-id-1 div.sk-label-container {text-align: center;}#sk-container-id-1 div.sk-container {/* jupyter's `normalize.less` sets `[hidden] { display: none; }` but bootstrap.min.css set `[hidden] { display: none !important; }` so we also need the `!important` here to be able to override the default hidden behavior on the sphinx rendered scikit-learn.org. See: https://github.com/scikit-learn/scikit-learn/issues/21755 */display: inline-block !important;position: relative;}#sk-container-id-1 div.sk-text-repr-fallback {display: none;}</style><div id=\"sk-container-id-1\" class=\"sk-top-container\"><div class=\"sk-text-repr-fallback\"><pre>RandomForestClassifier(random_state=42)</pre><b>In a Jupyter environment, please rerun this cell to show the HTML representation or trust the notebook. <br />On GitHub, the HTML representation is unable to render, please try loading this page with nbviewer.org.</b></div><div class=\"sk-container\" hidden><div class=\"sk-item\"><div class=\"sk-estimator sk-toggleable\"><input class=\"sk-toggleable__control sk-hidden--visually\" id=\"sk-estimator-id-1\" type=\"checkbox\" checked><label for=\"sk-estimator-id-1\" class=\"sk-toggleable__label sk-toggleable__label-arrow\">RandomForestClassifier</label><div class=\"sk-toggleable__content\"><pre>RandomForestClassifier(random_state=42)</pre></div></div></div></div></div>"
+            ]
+          },
+          "metadata": {},
+          "execution_count": 9
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Predecir en el conjunto de prueba"
+      ],
+      "metadata": {
+        "id": "LgHvYc4NEEBT"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "y_pred = rf_model.predict(X_test)"
+      ],
+      "metadata": {
+        "id": "ezbFTb0UEHVk"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Evaluar el modelo con accuracy_score y classification_report"
+      ],
+      "metadata": {
+        "id": "8zEWlVeUEJw4"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "accuracy = accuracy_score(y_test, y_pred)\n",
+        "report = classification_report(y_test, y_pred, target_names=['Derrota', 'Empate', 'Victoria'])\n",
+        "\n",
+        "print(f'Accuracy: {accuracy}')\n",
+        "print('Classification Report:')\n",
+        "print(report)"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "AaBYAk0QEMVT",
+        "outputId": "6c15bec5-b800-4043-f297-bdb47aab68ea"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Accuracy: 0.5833333333333334\n",
+            "Classification Report:\n",
+            "              precision    recall  f1-score   support\n",
+            "\n",
+            "     Derrota       0.40      0.60      0.48        10\n",
+            "      Empate       0.57      0.44      0.50        18\n",
+            "    Victoria       0.68      0.66      0.67        32\n",
+            "\n",
+            "    accuracy                           0.58        60\n",
+            "   macro avg       0.55      0.57      0.55        60\n",
+            "weighted avg       0.60      0.58      0.59        60\n",
+            "\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Mostrar las primeras predicciones junto con los valores reales"
+      ],
+      "metadata": {
+        "id": "Xvu4ZXOkFDuD"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "predicciones = pd.DataFrame({'Real': y_test, 'Predicción': y_pred})\n",
+        "print(predicciones.head())"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "5nJ_-WU9FKC4",
+        "outputId": "d89e7799-f006-414f-f0e3-23af8e3393d7"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "     Real  Predicción\n",
+            "167     3           3\n",
+            "211     1           3\n",
+            "63      3           0\n",
+            "154     0           0\n",
+            "5       3           0\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Predicciones:\n",
+        "- Crear un DataFrame con las características del partido\n",
+        "- Agregar las variables dummy del Equipo\n",
+        "- Predecir las probabilidades utilizando el modelo entrenado\n",
+        "- Devolver las probabilidades de Victoria, Empate y Derrota"
+      ],
+      "metadata": {
+        "id": "nI2YEj93FTaO"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "def predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy):\n",
+        "    datos_partido = pd.DataFrame({\n",
+        "        'Diferencia de Goles': [diferencia_goles],\n",
+        "        'Dificultad del Rival': [dificultad_rival],\n",
+        "        'Localía': [localia],\n",
+        "\n",
+        "    })\n",
+        "\n",
+        "    for equipo in equipo_dummy:\n",
+        "        datos_partido[equipo] = equipo_dummy[equipo]\n",
+        "\n",
+        "    probabilidades = rf_model.predict_proba(datos_partido)\n",
+        "\n",
+        "    return probabilidades[0]"
+      ],
+      "metadata": {
+        "id": "FXbEZugtFjwi"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "# Predicciones"
+      ],
+      "metadata": {
+        "id": "FsH1-P1NJnRb"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Pachuca vs América (Cuartos de Final)"
+      ],
+      "metadata": {
+        "id": "gtWUCYY-Ge6E"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Ida desde la perspectiva del local"
+      ],
+      "metadata": {
+        "id": "FxfDzCz7FsnL"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 0\n",
+        "dificultad_rival = 1.33333\n",
+        "localia = 0\n",
+        "equipo_dummy = {'América': [1], 'Cruz Azul': [0], 'Guadalajara': [0], 'Monterrey': [0], 'Pachuca': [1], 'Toluca': [0], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades1i = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V1I= probabilidades1i[2]\n",
+        "E1I= probabilidades1i[1]\n",
+        "D1I= probabilidades1i[0]"
+      ],
+      "metadata": {
+        "id": "SWqcG_8DF7E-"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Ida desde la perspectiva del visitante"
+      ],
+      "metadata": {
+        "id": "oQ2KvfpCF3EQ"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 0\n",
+        "dificultad_rival = 0.33333\n",
+        "localia = 1\n",
+        "equipo_dummy = {'América': [1], 'Cruz Azul': [0], 'Guadalajara': [0], 'Monterrey': [0], 'Pachuca': [1], 'Toluca': [0], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades2i = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V2I= probabilidades2i[2]\n",
+        "E2I= probabilidades2i[1]\n",
+        "D2I= probabilidades2i[0]"
+      ],
+      "metadata": {
+        "id": "NOYYww7ZGENY"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Resultados del Partido de Ida"
+      ],
+      "metadata": {
+        "id": "kD4mPvoJGHZT"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "print('Partido de Ida\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'Pachuca':<10} {V1I:<15.4f} {E1I:<15.4f} {D1I:<15.4f}\")\n",
+        "print(f\"{'América':<10} {V2I:<15.4f} {E2I:<15.4f} {D2I:<15.4f}\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "gxvtJsLzGnsD",
+        "outputId": "bf4766f5-f558-465a-b6a8-322a65db4fea"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Partido de Ida\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "Pachuca    0.5417          0.3700          0.0883         \n",
+            "América    0.3267          0.1800          0.4933         \n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Vuelta desde la perspectiva del local"
+      ],
+      "metadata": {
+        "id": "j7FuInMAGs44"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 1\n",
+        "dificultad_rival = 0\n",
+        "localia = 0\n",
+        "equipo_dummy = {'América': [1], 'Cruz Azul': [0], 'Guadalajara': [0], 'Monterrey': [0], 'Pachuca': [1], 'Toluca': [0], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V2V= probabilidades[2]\n",
+        "E2V= probabilidades[1]\n",
+        "D2V= probabilidades[0]"
+      ],
+      "metadata": {
+        "id": "Wd2Gu1IbGwjI"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Vuelta desde la perspectiva del visitante"
+      ],
+      "metadata": {
+        "id": "GNheafHPGzbK"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = -1\n",
+        "dificultad_rival = 1.66666\n",
+        "localia = 1\n",
+        "equipo_dummy = {'América': [1], 'Cruz Azul': [0], 'Guadalajara': [0], 'Monterrey': [0], 'Pachuca': [1], 'Toluca': [0], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V1V= probabilidades[2]\n",
+        "E1V= probabilidades[1]\n",
+        "D1V= probabilidades[0]"
+      ],
+      "metadata": {
+        "id": "G3icM3J5G1jM"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Resultados del Partido de Vuelta"
+      ],
+      "metadata": {
+        "id": "46xXzZOPG7KP"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "print('Partido de Vuelta\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'Pachuca':<10} {V1V:<15.4f} {E1V:<15.4f} {D1V:<15.4f}\")\n",
+        "print(f\"{'América':<10} {V2V:<15.4f} {E2V:<15.4f} {D2V:<15.4f}\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "tJ1fYiAEHL17",
+        "outputId": "f111732e-e939-445b-dd9a-7d97516f6f0a"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Partido de Vuelta\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "Pachuca    0.4400          0.1400          0.4200         \n",
+            "América    0.7233          0.1400          0.1367         \n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Resultado del Promedio de Partidos"
+      ],
+      "metadata": {
+        "id": "2AHaf-L8HWHz"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "promedio1V= (V1I + V1V) / 2\n",
+        "promedio1E= (E1I + E1V) / 2\n",
+        "promedio1D= (D1I + D1V) / 2\n",
+        "promedio2V= (V2I + V2V) / 2\n",
+        "promedio2E= (E2I + E2V) / 2\n",
+        "promedio2D= (D2I + D2V) / 2\n",
+        "\n",
+        "print('Promedio de Partidos\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'Pachuca':<10} {promedio1V:<15.4f} {promedio1E:<15.4f} {promedio1D:<15.4f}\")\n",
+        "print(f\"{'América':<10} {promedio2V:<15.4f} {promedio2E:<15.4f} {promedio2D:<15.4f}\")\n",
+        "print('Ganador América')"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "opKbvveIHZOs",
+        "outputId": "f78178ba-6f1f-4ff1-e310-4c1e056649db"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Promedio de Partidos\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "Pachuca    0.4908          0.2550          0.2542         \n",
+            "América    0.5250          0.1600          0.3150         \n",
+            "Ganador América\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Guadalajara vs Toluca (Cuartos de Final)"
+      ],
+      "metadata": {
+        "id": "TRnQTB8ZHj29"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Ida desde la perspectiva del local"
+      ],
+      "metadata": {
+        "id": "dmKbIyRxHsQa"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 1\n",
+        "dificultad_rival = -0.33333\n",
+        "localia = 0\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [0], 'Guadalajara': [1], 'Monterrey': [0], 'Pachuca': [0], 'Toluca': [1], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades1i = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V1I= probabilidades1i[2]\n",
+        "E1I= probabilidades1i[1]\n",
+        "D1I= probabilidades1i[0]"
+      ],
+      "metadata": {
+        "id": "EH_zLh-fHvOO"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Ida desde la perspectiva del visitante"
+      ],
+      "metadata": {
+        "id": "8fP3fPrTHyNy"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = -1\n",
+        "dificultad_rival = 1.33333\n",
+        "localia = 1\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [0], 'Guadalajara': [1], 'Monterrey': [0], 'Pachuca': [0], 'Toluca': [1], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades2i = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V2I= probabilidades2i[2]\n",
+        "E2I= probabilidades2i[1]\n",
+        "D2I= probabilidades2i[0]"
+      ],
+      "metadata": {
+        "id": "mDU4JJPIH0LV"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Resultados del Partido de Ida"
+      ],
+      "metadata": {
+        "id": "vQPI34sEH2vd"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "print('Partido de Ida\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'Guadalajara':<10} {V1I:<15.4f} {E1I:<15.4f} {D1I:<15.4f}\")\n",
+        "print(f\"{'Toluca':<10} {V2I:<15.4f} {E2I:<15.4f} {D2I:<15.4f}\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "fxv_FxPyH46J",
+        "outputId": "276e482a-79aa-4a3f-ba91-826d89012293"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Partido de Ida\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "Guadalajara 0.6800          0.1000          0.2200         \n",
+            "Toluca     0.2200          0.3000          0.4800         \n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Vuelta desde la perspectiva del local"
+      ],
+      "metadata": {
+        "id": "eNGmd1H_H8Ki"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = -2\n",
+        "dificultad_rival = 1.666666\n",
+        "localia = 0\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [0], 'Guadalajara': [1], 'Monterrey': [0], 'Pachuca': [0], 'Toluca': [1], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V2V= probabilidades[2]\n",
+        "E2V= probabilidades[1]\n",
+        "D2V= probabilidades[0]"
+      ],
+      "metadata": {
+        "id": "5ELsbSnuH96F"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Vuelta desde la perspectiva del visitante"
+      ],
+      "metadata": {
+        "id": "JLT4RGEAH-OO"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 2\n",
+        "dificultad_rival = -0.66666\n",
+        "localia = 1\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [0], 'Guadalajara': [1], 'Monterrey': [0], 'Pachuca': [0], 'Toluca': [1], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V1V= probabilidades[2]\n",
+        "E1V= probabilidades[1]\n",
+        "D1V= probabilidades[0]"
+      ],
+      "metadata": {
+        "id": "8k5q1_djIHXb"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Resultados del partido de Vuelta"
+      ],
+      "metadata": {
+        "id": "8vXeVxnRIZ0t"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "print('Partido de Vuelta\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'Guadalajara':<10} {V1V:<15.4f} {E1V:<15.4f} {D1V:<15.4f}\")\n",
+        "print(f\"{'Toluca':<10} {V2V:<15.4f} {E2V:<15.4f} {D2V:<15.4f}\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "EzA5Ea_2Icfr",
+        "outputId": "3117b492-7e3e-4560-9ee0-7a26c2daa7c0"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Partido de Ida\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "Guadalajara 0.2500          0.2475          0.5025         \n",
+            "Toluca     0.6400          0.1500          0.2100         \n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Promedio de Partidos"
+      ],
+      "metadata": {
+        "id": "bRaAVKZbJOu7"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "promedio1V= (V1I + V1V) / 2\n",
+        "promedio1E= (E1I + E1V) / 2\n",
+        "promedio1D= (D1I + D1V) / 2\n",
+        "promedio2V= (V2I + V2V) / 2\n",
+        "promedio2E= (E2I + E2V) / 2\n",
+        "promedio2D= (D2I + D2V) / 2\n",
+        "\n",
+        "print('Promedio de Partidos\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'Guadalajara':<10} {promedio1V:<15.4f} {promedio1E:<15.4f} {promedio1D:<15.4f}\")\n",
+        "print(f\"{'Toluca':<10} {promedio2V:<15.4f} {promedio2E:<15.4f} {promedio2D:<15.4f}\")\n",
+        "print('Ganador Guadalajara')"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "VESI58xaJSU-",
+        "outputId": "9f555dd2-1f8a-4be1-fec9-7913294f3939"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Promedio de Partidos\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "Guadalajara 0.4650          0.1738          0.3612         \n",
+            "Toluca     0.4300          0.2250          0.3450         \n",
+            "Ganador Guadalajara\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## UNAM vs Cruz Azul (Cuartos de Final)"
+      ],
+      "metadata": {
+        "id": "uYfUfSVwJZ18"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Ida desde la perspectiva del local"
+      ],
+      "metadata": {
+        "id": "CX9caVRVJxlv"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = -2\n",
+        "dificultad_rival = 0.66666\n",
+        "localia = 0\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [1], 'Guadalajara': [0], 'Monterrey': [0], 'Pachuca': [0], 'Toluca': [0], 'UANL': [0], 'UNAM': [1]}\n",
+        "\n",
+        "probabilidades1i = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V1I= probabilidades1i[2]\n",
+        "E1I= probabilidades1i[1]\n",
+        "D1I= probabilidades1i[0]"
+      ],
+      "metadata": {
+        "id": "ADuKr9K4Jc2p"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Ida desde la perspectiva del visitante"
+      ],
+      "metadata": {
+        "id": "Ya5kbFjqJ0V3"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 2\n",
+        "dificultad_rival = 0.33333\n",
+        "localia = 1\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [1], 'Guadalajara': [0], 'Monterrey': [0], 'Pachuca': [0], 'Toluca': [0], 'UANL': [0], 'UNAM': [1]}\n",
+        "\n",
+        "probabilidades2i = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V2I= probabilidades2i[2]\n",
+        "E2I= probabilidades2i[1]\n",
+        "D2I= probabilidades2i[0]"
+      ],
+      "metadata": {
+        "id": "6KCcv4V-J2SF"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Resultados del Partido de Ida"
+      ],
+      "metadata": {
+        "id": "F8Ys2729J_HI"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "print('Partido de Ida\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'UNAM':<10} {V1I:<15.4f} {E1I:<15.4f} {D1I:<15.4f}\")\n",
+        "print(f\"{'Cruz Azul':<10} {V2I:<15.4f} {E2I:<15.4f} {D2I:<15.4f}\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "p9j-2BqsKBo0",
+        "outputId": "8d6a9003-cb9e-44f4-b0da-c5e34ea8bdb8"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Partido de Ida\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "UNAM       0.2600          0.3800          0.3600         \n",
+            "Cruz Azul  0.4900          0.1000          0.4100         \n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Vuelta desde la perspectiva del local"
+      ],
+      "metadata": {
+        "id": "Pzs6eojBKKP4"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 1\n",
+        "dificultad_rival = 0\n",
+        "localia = 0\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [1], 'Guadalajara': [0], 'Monterrey': [0], 'Pachuca': [0], 'Toluca': [0], 'UANL': [0], 'UNAM': [1]}\n",
+        "\n",
+        "probabilidades = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V2V= probabilidades[2]\n",
+        "E2V= probabilidades[1]\n",
+        "D2V= probabilidades[0]"
+      ],
+      "metadata": {
+        "id": "tsxpzzfSKMfw"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Vuelta desde la perspectiva del visitante"
+      ],
+      "metadata": {
+        "id": "RT0MNWwQKPSy"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = -1\n",
+        "dificultad_rival = 1\n",
+        "localia = 1\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [1], 'Guadalajara': [0], 'Monterrey': [0], 'Pachuca': [0], 'Toluca': [0], 'UANL': [0], 'UNAM': [1]}\n",
+        "\n",
+        "probabilidades = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V1V= probabilidades[2]\n",
+        "E1V= probabilidades[1]\n",
+        "D1V= probabilidades[0]"
+      ],
+      "metadata": {
+        "id": "P89J_m5FKRCc"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Resultados del Partido de Vuelta"
+      ],
+      "metadata": {
+        "id": "ohgXtA71KTSF"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "print('Partido de Vuelta\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'UNAM':<10} {V1V:<15.4f} {E1V:<15.4f} {D1V:<15.4f}\")\n",
+        "print(f\"{'Cruz Azul':<10} {V2V:<15.4f} {E2V:<15.4f} {D2V:<15.4f}\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "FcuEmGFcKZnE",
+        "outputId": "256b8a4f-f708-444f-d826-7f5c0300ce0b"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Partido de Ida\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "UNAM       0.5000          0.2500          0.2500         \n",
+            "Cruz Azul  0.2800          0.5200          0.2000         \n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Promedio de Partidos"
+      ],
+      "metadata": {
+        "id": "jOoM61mzKxDR"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "promedio1V= (V1I + V1V) / 2\n",
+        "promedio1E= (E1I + E1V) / 2\n",
+        "promedio1D= (D1I + D1V) / 2\n",
+        "promedio2V= (V2I + V2V) / 2\n",
+        "promedio2E= (E2I + E2V) / 2\n",
+        "promedio2D= (D2I + D2V) / 2\n",
+        "\n",
+        "print('Promedio de Partidos\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'UNAM':<10} {promedio1V:<15.4f} {promedio1E:<15.4f} {promedio1D:<15.4f}\")\n",
+        "print(f\"{'Cruz Azul':<10} {promedio2V:<15.4f} {promedio2E:<15.4f} {promedio2D:<15.4f}\")\n",
+        "print('Ya que la diferencia no es significativa, se considera empate y pasa Cruz Azul por posición de tabla.')"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "ZQnwfePoK0su",
+        "outputId": "e56a78fb-8b9d-45be-93aa-4292b1066ff4"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Promedio de Partidos\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "UNAM       0.3800          0.3150          0.3050         \n",
+            "Cruz Azul  0.3850          0.3100          0.3050         \n",
+            "Ya que la diferencia no es significativa, se considera empate y pasa Cruz Azul por posición de tabla.\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## UANL vs Monterrey (Cuartos de Final)"
+      ],
+      "metadata": {
+        "id": "Ycp7xISYK76G"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Ida desde la perspectiva del local"
+      ],
+      "metadata": {
+        "id": "LV1hnA-FLEHC"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = -1\n",
+        "dificultad_rival = 0.33333\n",
+        "localia = 0\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [0], 'Guadalajara': [0], 'Monterrey': [1], 'Pachuca': [0], 'Toluca': [0], 'UANL': [1], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades1i = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V1I= probabilidades1i[2]\n",
+        "E1I= probabilidades1i[1]\n",
+        "D1I= probabilidades1i[0]"
+      ],
+      "metadata": {
+        "id": "vEsyjOTtLGKz"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Ida desde la perspectiva del visitante"
+      ],
+      "metadata": {
+        "id": "71sVB4zKLIMg"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 1\n",
+        "dificultad_rival = 2\n",
+        "localia = 1\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [0], 'Guadalajara': [0], 'Monterrey': [1], 'Pachuca': [0], 'Toluca': [0], 'UANL': [1], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades2i = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V2I= probabilidades2i[2]\n",
+        "E2I= probabilidades2i[1]\n",
+        "D2I= probabilidades2i[0]"
+      ],
+      "metadata": {
+        "id": "W_cvI9WYLJ36"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Resultados del partido de ida"
+      ],
+      "metadata": {
+        "id": "L9Fnb17OLLlW"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "print('Partido de Ida\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'UANL':<10} {V1I:<15.4f} {E1I:<15.4f} {D1I:<15.4f}\")\n",
+        "print(f\"{'Monterrey':<10} {V2I:<15.4f} {E2I:<15.4f} {D2I:<15.4f}\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "72nd5ZfDLNfk",
+        "outputId": "ea0259d2-ac08-4f4b-b7bf-6f46fdc73879"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Partido de Ida\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "UANL       0.3000          0.6500          0.0500         \n",
+            "Monterrey  0.5750          0.2350          0.1900         \n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Vuelta desde la perspectiva del local"
+      ],
+      "metadata": {
+        "id": "5VeIjhGhLS7K"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 1\n",
+        "dificultad_rival = 1.66666\n",
+        "localia = 0\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [0], 'Guadalajara': [0], 'Monterrey': [1], 'Pachuca': [0], 'Toluca': [0], 'UANL': [1], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V2V= probabilidades[2]\n",
+        "E2V= probabilidades[1]\n",
+        "D2V= probabilidades[0]"
+      ],
+      "metadata": {
+        "id": "9cu8AYgdLWJL"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Vuelta desde la perspectiva del visitante"
+      ],
+      "metadata": {
+        "id": "0pGiBWMiLWXI"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = -1\n",
+        "dificultad_rival = 0.66666\n",
+        "localia = 1\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [0], 'Guadalajara': [0], 'Monterrey': [1], 'Pachuca': [0], 'Toluca': [0], 'UANL': [1], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V1V= probabilidades[2]\n",
+        "E1V= probabilidades[1]\n",
+        "D1V= probabilidades[0]"
+      ],
+      "metadata": {
+        "id": "_BM3KTOWLbbu"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Resultados del partido de vuelta"
+      ],
+      "metadata": {
+        "id": "tq39A0YrLo1S"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "print('Partido de Vuelta\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'UANL':<10} {V1V:<15.4f} {E1V:<15.4f} {D1V:<15.4f}\")\n",
+        "print(f\"{'Monterrey':<10} {V2V:<15.4f} {E2V:<15.4f} {D2V:<15.4f}\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "a9xsbN-rLrL5",
+        "outputId": "daa09ba5-2b19-458c-d021-bb09aa38ff8a"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Partido de Vuelta\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "UANL       0.2100          0.2900          0.5000         \n",
+            "Monterrey  0.4600          0.3850          0.1550         \n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Promedio de partidos"
+      ],
+      "metadata": {
+        "id": "lL2GM47lLynU"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "promedio1V= (V1I + V1V) / 2\n",
+        "promedio1E= (E1I + E1V) / 2\n",
+        "promedio1D= (D1I + D1V) / 2\n",
+        "promedio2V= (V2I + V2V) / 2\n",
+        "promedio2E= (E2I + E2V) / 2\n",
+        "promedio2D= (D2I + D2V) / 2\n",
+        "\n",
+        "print('Promedio de Partidos\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'UANL':<10} {promedio1V:<15.4f} {promedio1E:<15.4f} {promedio1D:<15.4f}\")\n",
+        "print(f\"{'Monterrey':<10} {promedio2V:<15.4f} {promedio2E:<15.4f} {promedio2D:<15.4f}\")\n",
+        "print('Empate. Se clasifica Monterrey por posición de tabla.')"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "wUo97cmRL1gP",
+        "outputId": "2e9728ef-a69f-4c1c-f086-23a9f75dde37"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Promedio de Partidos\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "UANL       0.3167          0.5783          0.1050         \n",
+            "Monterrey  0.3775          0.5025          0.1200         \n",
+            "Empate. Se clasifica Monterrey por posición de tabla.\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Guadalajara vs América (Semifinales)"
+      ],
+      "metadata": {
+        "id": "pFReWNtdL65X"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Ida desde la perspectiva del local"
+      ],
+      "metadata": {
+        "id": "DZdOEgArMBdA"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 1\n",
+        "dificultad_rival = 2\n",
+        "localia = 0\n",
+        "equipo_dummy = {'América': [1], 'Cruz Azul': [0], 'Guadalajara': [1], 'Monterrey': [0], 'Pachuca': [0], 'Toluca': [0], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades1i = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V1I= probabilidades1i[2]\n",
+        "E1I= probabilidades1i[1]\n",
+        "D1I= probabilidades1i[0]"
+      ],
+      "metadata": {
+        "id": "q4iVXx3hMAvV"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Ida desde la perspectiva del visitante"
+      ],
+      "metadata": {
+        "id": "O3SGJz62MHzf"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 1\n",
+        "dificultad_rival = 2\n",
+        "localia = 1\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [0], 'Guadalajara': [0], 'Monterrey': [0], 'Pachuca': [0], 'Toluca': [0], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades2i = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V2I= probabilidades2i[2]\n",
+        "E2I= probabilidades2i[1]\n",
+        "D2I= probabilidades2i[0]"
+      ],
+      "metadata": {
+        "id": "pA3bp6lAMJxL"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Resultados del partido de ida"
+      ],
+      "metadata": {
+        "id": "AkMUAB8IMFrz"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "print('Partido de Ida\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'Guadalajara':<10} {V1I:<15.4f} {E1I:<15.4f} {D1I:<15.4f}\")\n",
+        "print(f\"{'América':<10} {V2I:<15.4f} {E2I:<15.4f} {D2I:<15.4f}\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "d1eVnC2bMNbL",
+        "outputId": "6a3a8d43-2962-4ecf-9d58-2a31c0c82726"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Partido de Ida\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "Guadalajara 0.4100          0.4250          0.1650         \n",
+            "América    0.6133          0.2117          0.1750         \n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Vuelta desde la perspectiva del local"
+      ],
+      "metadata": {
+        "id": "-_dylRByMO2B"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 1\n",
+        "dificultad_rival = 1.66666\n",
+        "localia = 0\n",
+        "equipo_dummy = {'América': [1], 'Cruz Azul': [0], 'Guadalajara': [1], 'Monterrey': [0], 'Pachuca': [0], 'Toluca': [0], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V2V= probabilidades[2]\n",
+        "E2V= probabilidades[1]\n",
+        "D2V= probabilidades[0]"
+      ],
+      "metadata": {
+        "id": "O160Hn11MQ1D"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Vuelta desde la perspectiva del visitante"
+      ],
+      "metadata": {
+        "id": "FlKDVsxsMSvs"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = -1\n",
+        "dificultad_rival = 2.33333\n",
+        "localia = 1\n",
+        "equipo_dummy = {'América': [1], 'Cruz Azul': [0], 'Guadalajara': [1], 'Monterrey': [0], 'Pachuca': [0], 'Toluca': [0], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V1V= probabilidades[2]\n",
+        "E1V= probabilidades[1]\n",
+        "D1V= probabilidades[0]"
+      ],
+      "metadata": {
+        "id": "igT1h7yTMVDc"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Resultados del partido de vuelta"
+      ],
+      "metadata": {
+        "id": "4Xgm7lr3MW2Z"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "print('Partido de Vuelta\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'Guadalajara':<10} {V1V:<15.4f} {E1V:<15.4f} {D1V:<15.4f}\")\n",
+        "print(f\"{'América':<10} {V2V:<15.4f} {E2V:<15.4f} {D2V:<15.4f}\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "DxY5nE6yMZMw",
+        "outputId": "c39003a3-e687-4d93-879c-f971d1164a61"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Partido de Vuelta\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "Guadalajara 0.2100          0.2900          0.5000         \n",
+            "América    0.4600          0.3850          0.1550         \n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Promedio de partidos"
+      ],
+      "metadata": {
+        "id": "tikrhJlVMqVB"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "promedio1V= (V1I + V1V) / 2\n",
+        "promedio1E= (E1I + E1V) / 2\n",
+        "promedio1D= (D1I + D1V) / 2\n",
+        "promedio2V= (V2I + V2V) / 2\n",
+        "promedio2E= (E2I + E2V) / 2\n",
+        "promedio2D= (D2I + D2V) / 2\n",
+        "\n",
+        "print('Promedio de Partidos\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'Guadalajara':<10} {promedio1V:<15.4f} {promedio1E:<15.4f} {promedio1D:<15.4f}\")\n",
+        "print(f\"{'América':<10} {promedio2V:<15.4f} {promedio2E:<15.4f} {promedio2D:<15.4f}\")\n",
+        "print('Ganador América')"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "WO86UV_8Msxa",
+        "outputId": "21cf7451-2439-462f-ca33-88c90b4e1d21"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Promedio de Partidos\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "Guadalajara 0.3100          0.3575          0.3325         \n",
+            "América    0.5367          0.2983          0.1650         \n",
+            "Ganador América\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Monterrey vs Cruz Azul (Semifinales)"
+      ],
+      "metadata": {
+        "id": "cPvVIyk1Mvzf"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Ida desde la perspectiva del local"
+      ],
+      "metadata": {
+        "id": "qH6_cA_QM2YX"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 0\n",
+        "dificultad_rival = 0.83333\n",
+        "localia = 0\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [1], 'Guadalajara': [0], 'Monterrey': [1], 'Pachuca': [0], 'Toluca': [0], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades1i = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V1I= probabilidades1i[2]\n",
+        "E1I= probabilidades1i[1]\n",
+        "D1I= probabilidades1i[0]"
+      ],
+      "metadata": {
+        "id": "dYJEKqkmMx4w"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Ida desde la perspectiva del visitante"
+      ],
+      "metadata": {
+        "id": "XTtccU9wM4VN"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 0\n",
+        "dificultad_rival = 0.49999\n",
+        "localia = 1\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [1], 'Guadalajara': [0], 'Monterrey': [1], 'Pachuca': [0], 'Toluca': [0], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades2i = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V2I= probabilidades2i[2]\n",
+        "E2I= probabilidades2i[1]\n",
+        "D2I= probabilidades2i[0]"
+      ],
+      "metadata": {
+        "id": "U9o9LKF-M6BM"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Resultados del partido de ida"
+      ],
+      "metadata": {
+        "id": "1hAVxnpSM71t"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "print('Partido de Ida\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'Monterrey':<10} {V1I:<15.4f} {E1I:<15.4f} {D1I:<15.4f}\")\n",
+        "print(f\"{'Cruz Azul':<10} {V2I:<15.4f} {E2I:<15.4f} {D2I:<15.4f}\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "2DDPEKrpM91O",
+        "outputId": "103c3f96-ba99-4e50-e1aa-ea53b8bc68d5"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Partido de Ida\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "Monterrey  0.7500          0.0500          0.2000         \n",
+            "Cruz Azul  0.2500          0.1200          0.6300         \n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Vuelta desde la perspectiva del local"
+      ],
+      "metadata": {
+        "id": "7qoEGTjnNBUI"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = -1\n",
+        "dificultad_rival = 0.83333\n",
+        "localia = 0\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [1], 'Guadalajara': [0], 'Monterrey': [1], 'Pachuca': [0], 'Toluca': [0], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V2V= probabilidades[2]\n",
+        "E2V= probabilidades[1]\n",
+        "D2V= probabilidades[0]"
+      ],
+      "metadata": {
+        "id": "m98qBuw0NDIw"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Vuelta desde la perspectiva del visitante"
+      ],
+      "metadata": {
+        "id": "E6NCjDBvNGJs"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 1\n",
+        "dificultad_rival = 0.49999\n",
+        "localia = 1\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [1], 'Guadalajara': [0], 'Monterrey': [1], 'Pachuca': [0], 'Toluca': [0], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V1V= probabilidades[2]\n",
+        "E1V= probabilidades[1]\n",
+        "D1V= probabilidades[0]"
+      ],
+      "metadata": {
+        "id": "ONm6wCiWNHqW"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Resultados del partido de vuelta"
+      ],
+      "metadata": {
+        "id": "s3kHy6-5NJTA"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "print('Partido de Vuelta\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'Monterrey':<10} {V1V:<15.4f} {E1V:<15.4f} {D1V:<15.4f}\")\n",
+        "print(f\"{'Cruz Azul':<10} {V2V:<15.4f} {E2V:<15.4f} {D2V:<15.4f}\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "amvgY10XNLMG",
+        "outputId": "a726f6dd-0f09-47d2-8ea4-7f7cfeac2f82"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Partido de Ida\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "Monterrey  0.4300          0.0500          0.5200         \n",
+            "Cruz Azul  0.5300          0.1600          0.3100         \n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Promedio de partidos"
+      ],
+      "metadata": {
+        "id": "Qj0wQHZpNP-1"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "promedio1V= (V1I + V1V) / 2\n",
+        "promedio1E= (E1I + E1V) / 2\n",
+        "promedio1D= (D1I + D1V) / 2\n",
+        "promedio2V= (V2I + V2V) / 2\n",
+        "promedio2E= (E2I + E2V) / 2\n",
+        "promedio2D= (D2I + D2V) / 2\n",
+        "\n",
+        "print('Promedio de Partidos\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'Monterrey':<10} {promedio1V:<15.4f} {promedio1E:<15.4f} {promedio1D:<15.4f}\")\n",
+        "print(f\"{'Cruz Azul':<10} {promedio2V:<15.4f} {promedio2E:<15.4f} {promedio2D:<15.4f}\")\n",
+        "print('Ganador Monterrey')"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "bDwPYgIQNReo",
+        "outputId": "ad9e3589-7156-4b63-dc93-864e21b4fb59"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Promedio de Partidos\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "Monterrey  0.5900          0.0500          0.3600         \n",
+            "Cruz Azul  0.3900          0.1400          0.4700         \n",
+            "Ganador Monterrey\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Monterrey vs América (Final)"
+      ],
+      "metadata": {
+        "id": "x7M5ginzNUBd"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Ida desde la perspectiva del local"
+      ],
+      "metadata": {
+        "id": "3v8Hx7cGNtOn"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 1\n",
+        "dificultad_rival = 3\n",
+        "localia = 0\n",
+        "equipo_dummy = {'América': [1], 'Cruz Azul': [0], 'Guadalajara': [0], 'Monterrey': [1], 'Pachuca': [0], 'Toluca': [0], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades1i = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V1I= probabilidades1i[2]\n",
+        "E1I= probabilidades1i[1]\n",
+        "D1I= probabilidades1i[0]"
+      ],
+      "metadata": {
+        "id": "Jm6cipIwNyG3"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Ida desde la perspectiva del visitante"
+      ],
+      "metadata": {
+        "id": "Tf2F7VCsN0TG"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 1\n",
+        "dificultad_rival = 1.16666\n",
+        "localia = 1\n",
+        "equipo_dummy = {'América': [1], 'Cruz Azul': [0], 'Guadalajara': [0], 'Monterrey': [1], 'Pachuca': [0], 'Toluca': [0], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades2i = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V2I= probabilidades2i[2]\n",
+        "E2I= probabilidades2i[1]\n",
+        "D2I= probabilidades2i[0]"
+      ],
+      "metadata": {
+        "id": "eehMTJaVN11K"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Resultados del partido de ida"
+      ],
+      "metadata": {
+        "id": "LHHPFjg8N4nh"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "print('Partido de Ida\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'Monterrey':<10} {V1I:<15.4f} {E1I:<15.4f} {D1I:<15.4f}\")\n",
+        "print(f\"{'América':<10} {V2I:<15.4f} {E2I:<15.4f} {D2I:<15.4f}\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "lw0pAFwpN6v7",
+        "outputId": "91306a5c-342e-456a-ef01-333144da5246"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Partido de Ida\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "Monterrey  0.3400          0.3700          0.2900         \n",
+            "América    0.4400          0.4500          0.1100         \n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Vuelta desde la perspectiva del local"
+      ],
+      "metadata": {
+        "id": "mmSwcugMN9Cr"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 0\n",
+        "dificultad_rival = 1\n",
+        "localia = 0\n",
+        "equipo_dummy = {'América': [1], 'Cruz Azul': [0], 'Guadalajara': [0], 'Monterrey': [1], 'Pachuca': [0], 'Toluca': [0], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V2V= probabilidades[2]\n",
+        "E2V= probabilidades[1]\n",
+        "D2V= probabilidades[0]"
+      ],
+      "metadata": {
+        "id": "OADrK_bAOAQY"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Vuelta desde la perspectiva del visitante"
+      ],
+      "metadata": {
+        "id": "WSuaVUU1OAcE"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "diferencia_goles = 0\n",
+        "dificultad_rival = 2.83333\n",
+        "localia = 1\n",
+        "equipo_dummy = {'América': [0], 'Cruz Azul': [0], 'Guadalajara': [0], 'Monterrey': [0], 'Pachuca': [0], 'Toluca': [0], 'UANL': [0], 'UNAM': [0]}\n",
+        "\n",
+        "probabilidades = predecir_probabilidad(diferencia_goles, dificultad_rival, localia, equipo_dummy)\n",
+        "V1V= probabilidades[2]\n",
+        "E1V= probabilidades[1]\n",
+        "D1V= probabilidades[0]"
+      ],
+      "metadata": {
+        "id": "dndxU1uGOMqL"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Resultados del partido de vuelta"
+      ],
+      "metadata": {
+        "id": "JgePokOyONpx"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "print('Partido de Vuelta\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'Monterrey':<10} {V1V:<15.4f} {E1V:<15.4f} {D1V:<15.4f}\")\n",
+        "print(f\"{'América':<10} {V2V:<15.4f} {E2V:<15.4f} {D2V:<15.4f}\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "BB6CdbFOOQb-",
+        "outputId": "28b9da6d-98e1-49b1-aa73-594ede966206"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Partido de Vuelta\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "Monterrey  0.4167          0.4350          0.1483         \n",
+            "América    0.5600          0.4100          0.0300         \n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Promedio de Partidos"
+      ],
+      "metadata": {
+        "id": "vlUcdMnVOXeR"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "promedio1V= (V1I + V1V) / 2\n",
+        "promedio1E= (E1I + E1V) / 2\n",
+        "promedio1D= (D1I + D1V) / 2\n",
+        "promedio2V= (V2I + V2V) / 2\n",
+        "promedio2E= (E2I + E2V) / 2\n",
+        "promedio2D= (D2I + D2V) / 2\n",
+        "\n",
+        "print('Promedio de Partidos\\n')\n",
+        "print(f\"{'Equipo':<10} {'Victoria':<15} {'Empate':<15} {'Derrota':<15}\")\n",
+        "print(f\"{'-'*50}\")\n",
+        "print(f\"{'Monterrey':<10} {promedio1V:<15.4f} {promedio1E:<15.4f} {promedio1D:<15.4f}\")\n",
+        "print(f\"{'América':<10} {promedio2V:<15.4f} {promedio2E:<15.4f} {promedio2D:<15.4f}\")\n",
+        "print('Ganador América')\n",
+        "\n",
+        "print('¡América es Campeón!')"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "xPWCc-9hOZPH",
+        "outputId": "8d052171-9ad2-4f14-c725-624921898247"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Promedio de Partidos\n",
+            "\n",
+            "Equipo     Victoria        Empate          Derrota        \n",
+            "--------------------------------------------------\n",
+            "Monterrey  0.3783          0.4025          0.2192         \n",
+            "América    0.5000          0.4300          0.0700         \n",
+            "Ganador América\n",
+            "¡América es Campeón!\n"
+          ]
+        }
+      ]
+    }
+  ]
+}
